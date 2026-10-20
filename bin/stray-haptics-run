@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -u
+
+root="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/stray-ps5-haptics"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/stray-ps5-haptics"
+game_dir="$(cat "$config_dir/game_dir")"
+events="$game_dir/Hk_project/Binaries/Win64/ue4ss/Mods/StrayHaptics/events.log"
+extra_args=()
+[ -f "$config_dir/daemon_args" ] && read -r -a extra_args < "$config_dir/daemon_args"
+
+mkdir -p "$state_dir"
+(
+  unset LD_PRELOAD LD_LIBRARY_PATH
+  exec python3 -I "$root/daemon/stray_haptics.py" "$events" --exit-with-pid $$ "${extra_args[@]}"
+) > "$state_dir/daemon.log" 2>&1 &
+daemon=$!
+
+"$@"
+status=$?
+
+kill "$daemon" 2>/dev/null
+wait "$daemon" 2>/dev/null
+exit "$status"
