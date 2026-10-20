@@ -298,6 +298,25 @@ local function chosen_index(before, after)
     return nil
 end
 
+local function newly_used(before, after)
+    before = before or {bits = {}, count = 0}
+    for i, used in ipairs(after.bits) do
+        if used and not before.bits[i] then
+            return i
+        end
+    end
+    return nil
+end
+
+local function bit_text(state)
+    state = state or {bits = {}, count = 0}
+    local chars = {}
+    for i, used in ipairs(state.bits) do
+        chars[i] = used and "1" or "0"
+    end
+    return table.concat(chars) .. "/" .. tostring(state.count)
+end
+
 local function wave_of(node)
     local wave = valid(node) and node.SoundWave
     return valid(wave) and wave:GetFName():ToString() or nil
@@ -330,6 +349,36 @@ local function resolve_wave(cue, before)
     return nil
 end
 
+local function guess_wave(cue, before)
+    local candidates = {}
+    for _, node in ipairs(random_nodes(cue.FirstNode, {}, 0)) do
+        local list = children(node)
+        if #list > 0 and node_class(list[1]) == "SoundNodeWavePlayer" then
+            local previous = before[node:GetFullName()]
+            candidates[#candidates + 1] = {list = list, before = previous, after = read_random(node)}
+        end
+    end
+    local states = {}
+    for _, candidate in ipairs(candidates) do
+        states[#states + 1] = bit_text(candidate.before) .. " -> " .. bit_text(candidate.after)
+    end
+    local picked, index, reason = nil, nil, nil
+    for _, candidate in ipairs(candidates) do
+        index = newly_used(candidate.before, candidate.after)
+        if index and candidate.list[index] then
+            picked, reason = candidate, "first new"
+            break
+        end
+    end
+    if not picked and candidates[1] then
+        picked, index, reason = candidates[1], math.random(#candidates[1].list), "random"
+    end
+    local wave = picked and wave_of(picked.list[index])
+    log("guessed " .. tostring(wave) .. " (" .. tostring(reason) .. ") for " .. cue:GetFName():ToString()
+        .. ": " .. table.concat(states, " | "))
+    return wave
+end
+
 local function snapshot_loaded_cues()
     for _, cue in ipairs(FindAllOf("SoundCue") or {}) do
         if valid(cue) and speaker_cues[cue:GetFName():ToString()] then
@@ -349,7 +398,8 @@ local function speak(component_path, attempt)
     if not level then
         return
     end
-    local wave = resolve_wave(cue, random_state[cue:GetFullName()] or {})
+    local before = random_state[cue:GetFullName()] or {}
+    local wave = resolve_wave(cue, before)
     if not wave and attempt < 4 then
         ExecuteWithDelay(40 * attempt, function()
             ExecuteInGameThread(function()
@@ -357,6 +407,9 @@ local function speak(component_path, attempt)
             end)
         end)
         return
+    end
+    if not wave then
+        wave = guess_wave(cue, before)
     end
     snapshot(cue)
     if wave then
