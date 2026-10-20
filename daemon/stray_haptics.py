@@ -1,8 +1,10 @@
 import argparse
 import fcntl
+import glob
 import json
 import os
 import queue
+import signal
 import subprocess
 import sys
 import threading
@@ -15,6 +17,17 @@ BLOCK = 240
 PIPE_BYTES = 16384
 GROUP_CHANNELS = {"speaker": (0, 1), "haptic": (2, 3)}
 MIN_FADE = 0.01
+DUALSENSE_VENDOR = "054C"
+TRIGGER_REPORT_ID = 0x02
+TRIGGER_REPORT_SIZE = 48
+TRIGGER_LEFT = 0
+TRIGGER_RIGHT = 1
+TRIGGER_SLOTS = {TRIGGER_LEFT: (0x08, 22), TRIGGER_RIGHT: (0x04, 11)}
+TRIGGER_SIDE_NAMES = {TRIGGER_LEFT: "left", TRIGGER_RIGHT: "right"}
+TRIGGER_NONE = 0
+TRIGGER_SCRATCHABLE = 1
+TRIGGER_EFFECTS = {TRIGGER_NONE: bytes([0x05]), TRIGGER_SCRATCHABLE: bytes([0x01, 0x00, 0xA0])}
+TRIGGER_STATE_NAMES = {TRIGGER_NONE: "none", TRIGGER_SCRATCHABLE: "scratchable"}
 
 
 def soft_limit(samples, knee=0.8):
@@ -186,6 +199,72 @@ def follow(path, events):
             time.sleep(0.002)
 
 
+def find_hidraw(vendor=DUALSENSE_VENDOR):
+    for uevent in sorted(glob.glob("/sys/class/hidraw/hidraw*/device/uevent")):
+        with open(uevent) as handle:
+            if vendor in handle.read().upper():
+                return "/dev/" + uevent.split("/")[4]
+    return None
+
+
+def write_to_dualsense(report, find_device=find_hidraw):
+    device = find_device()
+    if device is None:
+        log("triggers: no DualSense in hidraw")
+        return False
+    try:
+        descriptor = os.open(device, os.O_WRONLY)
+        try:
+            os.write(descriptor, report)
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        log(f"triggers: could not write {device}: {error}")
+        return False
+    return True
+
+
+def trigger_report(side, effect):
+    flag, offset = TRIGGER_SLOTS[side]
+    report = bytearray(TRIGGER_REPORT_SIZE)
+    report[0] = TRIGGER_REPORT_ID
+    report[1] = flag
+    report[offset:offset + len(effect)] = effect
+    return bytes(report)
+
+
+class Triggers:
+    def __init__(self, write=write_to_dualsense):
+        self.write = write
+        self.engaged = set()
+
+    def handle(self, fields):
+        if fields[0] == "RESET":
+            self.release()
+            return
+        if fields[0] != "TRIGGERS" or len(fields) < 3:
+            return
+        try:
+            state, side = int(float(fields[1])), int(float(fields[2]))
+        except ValueError:
+            return
+        if state not in TRIGGER_EFFECTS or side not in TRIGGER_SLOTS:
+            return
+        self.set(side, state)
+
+    def set(self, side, state):
+        self.write(trigger_report(side, TRIGGER_EFFECTS[state]))
+        if state == TRIGGER_NONE:
+            self.engaged.discard(side)
+        else:
+            self.engaged.add(side)
+        log(f"triggers {TRIGGER_SIDE_NAMES[side]} {TRIGGER_STATE_NAMES[state]}")
+
+    def release(self):
+        for side in sorted(self.engaged):
+            self.set(side, TRIGGER_NONE)
+
+
 def find_sink(pattern):
     out = subprocess.run(["pactl", "list", "sinks", "short"], capture_output=True, text=True).stdout
     for line in out.splitlines():
@@ -220,9 +299,17 @@ def main():
     args = parser.parse_args()
 
     mixer = Mixer(Sounds(args.assets), args.haptic_gain, args.speaker_gain)
+    triggers = Triggers()
     events = queue.Queue()
     threading.Thread(target=follow, args=(args.events, events), daemon=True).start()
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
+    try:
+        play(args, mixer, triggers, events)
+    finally:
+        triggers.release()
 
+
+def play(args, mixer, triggers, events):
     output = None
     next_sink_check = 0.0
     log(f"following {args.events}")
@@ -232,9 +319,11 @@ def main():
             break
         while True:
             try:
-                mixer.handle(events.get_nowait())
+                fields = events.get_nowait()
             except queue.Empty:
                 break
+            mixer.handle(fields)
+            triggers.handle(fields)
         if output is None or output.poll() is not None:
             output = None
             now = time.monotonic()

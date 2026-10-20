@@ -1,5 +1,6 @@
 local TAG = "[StrayHaptics] "
 local CONTROLLER_CLASS = "/Game/Technical/BP_HKPlayerController.BP_HKPlayerController_C"
+local TRIGGERS_FUNCTION = "/Script/Hk_project.HKPlayerController:SetPS5TriggersState"
 local SPEAKER_OWNER = "BP_CatPawn_C"
 local LEVEL_EPSILON = 0.01
 
@@ -197,6 +198,14 @@ local function register_hooks()
     RegisterHook("/Script/Engine.GameplayStatics:SetGamePaused", function(context, world, now_paused)
         set_paused(now_paused:get() and true or false)
     end)
+    local ok, err = pcall(RegisterHook, TRIGGERS_FUNCTION, function(context, state, side)
+        local state_ok, state_value = pcall(function() return state:get() end)
+        local side_ok, side_value = pcall(function() return side:get() end)
+        if state_ok and side_ok then
+            emit("TRIGGERS", state_value, side_value)
+        end
+    end)
+    log((ok and "hooked " or "hook failed ") .. TRIGGERS_FUNCTION .. (ok and "" or (" " .. tostring(err))))
 end
 
 local function load_speaker_cues()
