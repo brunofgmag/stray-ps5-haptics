@@ -80,5 +80,29 @@ class FollowTest(unittest.TestCase):
             self.assertEqual(events.get(timeout=1)[1], "new")
 
 
+class OutputTest(unittest.TestCase):
+    def test_output_opens_when_the_kernel_refuses_to_resize_the_pipe(self):
+        import fcntl
+        from unittest import mock
+
+        import stray_haptics
+
+        real_fcntl = fcntl.fcntl
+
+        def refuse_resize(fd, command, *args):
+            if command == fcntl.F_SETPIPE_SZ:
+                raise PermissionError(1, "Operation not permitted")
+            return real_fcntl(fd, command, *args)
+
+        reader, writer = os.pipe()
+        self.addCleanup(os.close, reader)
+        process = mock.Mock()
+        process.stdin = os.fdopen(writer, "wb", buffering=0)
+        self.addCleanup(process.stdin.close)
+        with mock.patch.object(stray_haptics.subprocess, "Popen", return_value=process), \
+                mock.patch.object(stray_haptics.fcntl, "fcntl", side_effect=refuse_resize):
+            self.assertIs(stray_haptics.open_output("sink"), process)
+
+
 if __name__ == "__main__":
     unittest.main()

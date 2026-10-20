@@ -201,7 +201,11 @@ def open_output(sink):
          "--channel-map", "FL,FR,RL,RR", "--format", "f32", "--latency", "10ms",
          "--properties", '{ "media.name": "Stray PS5 haptics", "node.name": "stray-ps5-haptics" }', "-"],
         stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
-    fcntl.fcntl(process.stdin.fileno(), fcntl.F_SETPIPE_SZ, PIPE_BYTES)
+    pipe = process.stdin.fileno()
+    try:
+        fcntl.fcntl(pipe, fcntl.F_SETPIPE_SZ, PIPE_BYTES)
+    except PermissionError:
+        log(f"pipe kept at {fcntl.fcntl(pipe, fcntl.F_GETPIPE_SZ)} bytes: the user is over the kernel's pipe page limit")
     return process
 
 
