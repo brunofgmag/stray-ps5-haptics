@@ -80,12 +80,13 @@ class FollowTest(unittest.TestCase):
             self.assertEqual(events.get(timeout=1)[1], "new")
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "the pipe to pw-cat is Linux only")
 class OutputTest(unittest.TestCase):
     def test_output_opens_when_the_kernel_refuses_to_resize_the_pipe(self):
         import fcntl
         from unittest import mock
 
-        import stray_haptics
+        import backend_linux
 
         real_fcntl = fcntl.fcntl
 
@@ -99,9 +100,12 @@ class OutputTest(unittest.TestCase):
         process = mock.Mock()
         process.stdin = os.fdopen(writer, "wb", buffering=0)
         self.addCleanup(process.stdin.close)
-        with mock.patch.object(stray_haptics.subprocess, "Popen", return_value=process), \
-                mock.patch.object(stray_haptics.fcntl, "fcntl", side_effect=refuse_resize):
-            self.assertIs(stray_haptics.open_output("sink"), process)
+        logged = []
+        with mock.patch.object(backend_linux.subprocess, "Popen", return_value=process), \
+                mock.patch.object(backend_linux.fcntl, "fcntl", side_effect=refuse_resize):
+            output = backend_linux.PipeWireOutput("sink", 48000, logged.append)
+        self.assertIs(output.process, process)
+        self.assertIn("pipe kept at", logged[0])
 
 
 if __name__ == "__main__":

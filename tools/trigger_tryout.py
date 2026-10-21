@@ -4,8 +4,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "daemon"))
 
-from stray_haptics import (TRIGGER_EFFECTS, TRIGGER_LEFT, TRIGGER_NONE, TRIGGER_RIGHT, trigger_report,
-                           write_to_dualsense)
+from stray_haptics import TRIGGER_EFFECTS, TRIGGER_LEFT, TRIGGER_NONE, TRIGGER_RIGHT, load_backend, trigger_report
 
 ZONES = 10
 HOLD_SECONDS = 10
@@ -42,19 +41,20 @@ OPTIONS = [
 ]
 
 
-def apply(effect):
-    return all(write_to_dualsense(trigger_report(side, effect)) for side in (TRIGGER_LEFT, TRIGGER_RIGHT))
+def apply(write, effect):
+    return all(write(trigger_report(side, effect)) for side in (TRIGGER_LEFT, TRIGGER_RIGHT))
 
 
 def main():
+    write = load_backend().write_trigger_report
     chosen = [option for option in OPTIONS if len(sys.argv) < 2 or option[0] in sys.argv[1:]]
     for number, label, effect in chosen:
         print(f"\noption {number}: {label}", flush=True)
-        if not apply(effect):
+        if not apply(write, effect):
             return 1
         print(f"{time.strftime('%H:%M:%S')} on ({effect.hex()}), press L2 and R2", flush=True)
         time.sleep(HOLD_SECONDS)
-        apply(TRIGGER_EFFECTS[TRIGGER_NONE])
+        apply(write, TRIGGER_EFFECTS[TRIGGER_NONE])
         print(f"{time.strftime('%H:%M:%S')} off", flush=True)
         time.sleep(REST_SECONDS)
     return 0
