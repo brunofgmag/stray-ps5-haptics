@@ -35,7 +35,7 @@ WINDOWS_VDF = r'''"libraryfolders"
 
 def touch(path, content=""):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as handle:
+    with open(path, "w", newline="") as handle:
         handle.write(content)
 
 

@@ -43,7 +43,7 @@ class DaemonDefaultsTest(unittest.TestCase):
             finished = subprocess.run([sys.executable, "-I", os.path.join(DAEMON, "stray_haptics.py"), "events.log"],
                                       env=environ, capture_output=True, text=True, timeout=30)
         self.assertNotEqual(finished.returncode, 0)
-        self.assertIn(os.path.join(directory, "stray-ps5-haptics", "manifest.json"), finished.stderr)
+        self.assertIn(repr(os.path.join(directory, "stray-ps5-haptics", "manifest.json")), finished.stderr)
 
 
 if __name__ == "__main__":
