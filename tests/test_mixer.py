@@ -79,6 +79,27 @@ class FollowTest(unittest.TestCase):
                 handle.write("START\tnew\tmeow\t0\t1\n")
             self.assertEqual(events.get(timeout=1)[1], "new")
 
+    def test_follows_a_log_the_game_truncates_and_keeps_open_in_text_mode(self):
+        import queue
+        import tempfile
+        import threading
+        import time
+
+        from stray_haptics import follow
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            path = os.path.join(directory, "events.log")
+            with open(path, "w") as handle:
+                handle.write("START\told\tmeow\t0\t1\n" * 10)
+            events = queue.Queue()
+            threading.Thread(target=follow, args=(path, events), daemon=True).start()
+            time.sleep(0.1)
+            with open(path, "w") as game:
+                game.write("START\tnew\tmeow\t0\t1\n")
+                game.flush()
+                self.assertEqual(events.get(timeout=1), ["RESET"])
+                self.assertEqual(events.get(timeout=1), ["START", "new", "meow", "0", "1"])
+
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "the pipe to pw-cat is Linux only")
 class OutputTest(unittest.TestCase):
