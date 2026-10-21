@@ -328,7 +328,7 @@ local function resolve_wave(cue, before)
         if #list > 0 and node_class(list[1]) == "SoundNodeWavePlayer" then
             local index = chosen_index(before[node:GetFullName()], read_random(node))
             if index and list[index] then
-                return wave_of(list[index])
+                return wave_of(list[index]), not valid(list[index])
             end
         end
     end
@@ -399,7 +399,12 @@ local function speak(component_path, attempt)
         return
     end
     local before = random_state[cue:GetFullName()] or {}
-    local wave = resolve_wave(cue, before)
+    local wave, empty = resolve_wave(cue, before)
+    if empty then
+        snapshot(cue)
+        log("drew an empty slot of " .. cue_name .. ", the game plays nothing there either")
+        return
+    end
     if not wave and attempt < 4 then
         ExecuteWithDelay(40 * attempt, function()
             ExecuteInGameThread(function()
