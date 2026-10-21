@@ -2,8 +2,37 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/stray-ps5-haptics"
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+config_dir="$config_home/stray-ps5-haptics"
+wireplumber_dir="$config_home/wireplumber/wireplumber.conf.d"
 assets_dir="${XDG_DATA_HOME:-$HOME/.local/share}/stray-ps5-haptics"
+
+install_wireplumber_rules() {
+  local rule target changed=0
+  mkdir -p "$wireplumber_dir"
+  for rule in "$root"/wireplumber/*.conf; do
+    target="$wireplumber_dir/$(basename "$rule")"
+    if ! cmp -s "$rule" "$target"; then
+      cp "$rule" "$target"
+      changed=1
+    fi
+  done
+  if [ "$changed" = 1 ]; then
+    systemctl --user restart wireplumber
+    until pactl info > /dev/null 2>&1; do sleep 1; done
+    echo "WirePlumber rules installed in $wireplumber_dir"
+  fi
+}
+
+select_pro_audio() {
+  local card
+  card="$(pactl list cards short | awk '/DualSense_Wireless_Controller/ {print $2; exit}')"
+  if [ -n "$card" ]; then
+    pactl set-card-profile "$card" pro-audio
+  else
+    echo "No DualSense audio device found. Connect the controller and run this again to switch it to Pro Audio."
+  fi
+}
 
 find_game_dir() {
   local steam="$HOME/.local/share/Steam"
@@ -69,6 +98,9 @@ EOF
 
 mkdir -p "$config_dir"
 echo "$game_dir" > "$config_dir/game_dir"
+
+install_wireplumber_rules
+select_pro_audio
 
 echo
 echo "Installed. Steam launch options for Stray need these two pieces:"
