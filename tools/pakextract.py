@@ -5,7 +5,7 @@ import sys
 import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-UNOODLE = os.path.join(HERE, "unoodle", "target", "release", "unoodle-block")
+UNOODLE = os.path.join(HERE, "unoodle", "target", "release", "unoodle-block" + (".exe" if sys.platform == "win32" else ""))
 UNCOMPRESSED_HEADER = 53
 
 
