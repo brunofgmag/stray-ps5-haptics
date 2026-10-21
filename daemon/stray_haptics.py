@@ -12,6 +12,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from locations import data_dir
+
 RATE = 48000
 BLOCK = 240
 BACKENDS = {"linux": "backend_linux", "win32": "backend_windows"}
@@ -250,7 +252,7 @@ def main():
     backend = load_backend()
     parser = argparse.ArgumentParser()
     parser.add_argument("events")
-    parser.add_argument("--assets", default=os.path.expanduser("~/.local/share/stray-ps5-haptics"))
+    parser.add_argument("--assets", default=data_dir())
     parser.add_argument("--sink", default=backend.default_sink)
     parser.add_argument("--haptic-gain", type=float, default=1.0)
     parser.add_argument("--speaker-gain", type=float, default=4.0)
