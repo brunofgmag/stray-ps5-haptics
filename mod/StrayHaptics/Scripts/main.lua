@@ -387,6 +387,11 @@ local function snapshot_loaded_cues()
     end
 end
 
+local function stopped(component)
+    local ok, playing = pcall(function() return component:IsPlaying() end)
+    return ok and not playing
+end
+
 local function speak(component_path, attempt)
     local component = resolve(component_path)
     local cue = component and component.Sound
@@ -411,6 +416,11 @@ local function speak(component_path, attempt)
                 speak(component_path, attempt + 1)
             end)
         end)
+        return
+    end
+    if not wave and stopped(component) then
+        snapshot(cue)
+        log("the game stopped " .. cue_name .. " before drawing a recording, nothing to play")
         return
     end
     if not wave then
@@ -444,11 +454,8 @@ local function poll()
         local component = resolve(path)
         if not component then
             stop_voice(path, 0)
-        elseif kind == "play" then
-            local ok, playing = pcall(function() return component:IsPlaying() end)
-            if ok and not playing then
-                stop_voice(path, 0)
-            end
+        elseif kind == "play" and stopped(component) then
+            stop_voice(path, 0)
         end
     end
 end
