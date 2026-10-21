@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create the release
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  bundle:
+    needs: release
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            format: zip
+            unoodle: unoodle-block.exe
+          - os: ubuntu-latest
+            platform: linux
+            format: tar.gz
+            unoodle: unoodle-block
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build unoodle
+        working-directory: tools/unoodle
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            rustup target add x86_64-unknown-linux-musl
+            cargo build --release --locked --target x86_64-unknown-linux-musl
+            mkdir -p target/release
+            cp target/x86_64-unknown-linux-musl/release/unoodle-block target/release/
+          else
+            cargo build --release --locked
+          fi
+      - name: Bundle the repository with unoodle
+        run: |
+          bundle="stray-ps5-haptics-$GITHUB_REF_NAME-${{ matrix.platform }}.${{ matrix.format }}"
+          git archive --format=${{ matrix.format }} --output="$bundle" \
+            --prefix=stray-ps5-haptics/tools/unoodle/target/release/ \
+            --add-file=tools/unoodle/target/release/${{ matrix.unoodle }} \
+            --prefix=stray-ps5-haptics/ HEAD
+          gh release upload "$GITHUB_REF_NAME" "$bundle"
+        env:
+          GH_TOKEN: ${{ github.token }}
