@@ -1,23 +1,24 @@
 import argparse
-import fcntl
-import glob
+import importlib
 import json
 import os
 import queue
 import signal
-import subprocess
 import sys
 import threading
 import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from locations import data_dir
+
 RATE = 48000
 BLOCK = 240
-PIPE_BYTES = 16384
+BACKENDS = {"linux": "backend_linux", "win32": "backend_windows"}
 GROUP_CHANNELS = {"speaker": (0, 1), "haptic": (2, 3)}
 MIN_FADE = 0.01
-DUALSENSE_VENDOR = "054C"
 TRIGGER_REPORT_ID = 0x02
 TRIGGER_REPORT_SIZE = 48
 TRIGGER_LEFT = 0
@@ -199,31 +200,6 @@ def follow(path, events):
             time.sleep(0.002)
 
 
-def find_hidraw(vendor=DUALSENSE_VENDOR):
-    for uevent in sorted(glob.glob("/sys/class/hidraw/hidraw*/device/uevent")):
-        with open(uevent) as handle:
-            if vendor in handle.read().upper():
-                return "/dev/" + uevent.split("/")[4]
-    return None
-
-
-def write_to_dualsense(report, find_device=find_hidraw):
-    device = find_device()
-    if device is None:
-        log("triggers: no DualSense in hidraw")
-        return False
-    try:
-        descriptor = os.open(device, os.O_WRONLY)
-        try:
-            os.write(descriptor, report)
-        finally:
-            os.close(descriptor)
-    except OSError as error:
-        log(f"triggers: could not write {device}: {error}")
-        return False
-    return True
-
-
 def trigger_report(side, effect):
     flag, offset = TRIGGER_SLOTS[side]
     report = bytearray(TRIGGER_REPORT_SIZE)
@@ -234,7 +210,7 @@ def trigger_report(side, effect):
 
 
 class Triggers:
-    def __init__(self, write=write_to_dualsense):
+    def __init__(self, write):
         self.write = write
         self.engaged = set()
 
@@ -265,56 +241,42 @@ class Triggers:
             self.set(side, TRIGGER_NONE)
 
 
-def find_sink(pattern):
-    out = subprocess.run(["pactl", "list", "sinks", "short"], capture_output=True, text=True).stdout
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) > 1 and pattern in parts[1]:
-            return parts[1]
-    return None
-
-
-def open_output(sink):
-    process = subprocess.Popen(
-        ["pw-cat", "--playback", "--raw", "--target", sink, "--rate", str(RATE), "--channels", "4",
-         "--channel-map", "FL,FR,RL,RR", "--format", "f32", "--latency", "10ms",
-         "--properties", '{ "media.name": "Stray PS5 haptics", "node.name": "stray-ps5-haptics" }', "-"],
-        stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
-    pipe = process.stdin.fileno()
-    try:
-        fcntl.fcntl(pipe, fcntl.F_SETPIPE_SZ, PIPE_BYTES)
-    except PermissionError:
-        log(f"pipe kept at {fcntl.fcntl(pipe, fcntl.F_GETPIPE_SZ)} bytes: the user is over the kernel's pipe page limit")
-    return process
+def load_backend(platform=sys.platform):
+    name = BACKENDS.get(platform)
+    if name is None:
+        raise SystemExit(f"no backend for {platform}: the daemon runs on Linux and Windows")
+    return importlib.import_module(name).Backend(log, RATE)
 
 
 def main():
+    backend = load_backend()
     parser = argparse.ArgumentParser()
     parser.add_argument("events")
-    parser.add_argument("--assets", default=os.path.expanduser("~/.local/share/stray-ps5-haptics"))
-    parser.add_argument("--sink", default="DualSense_Wireless_Controller-00.pro-output-0")
+    parser.add_argument("--assets", default=data_dir())
+    parser.add_argument("--sink", default=backend.default_sink)
     parser.add_argument("--haptic-gain", type=float, default=1.0)
     parser.add_argument("--speaker-gain", type=float, default=4.0)
     parser.add_argument("--exit-with-pid", type=int)
     args = parser.parse_args()
 
     mixer = Mixer(Sounds(args.assets), args.haptic_gain, args.speaker_gain)
-    triggers = Triggers()
+    triggers = Triggers(backend.write_trigger_report)
     events = queue.Queue()
     threading.Thread(target=follow, args=(args.events, events), daemon=True).start()
     signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
     try:
-        play(args, mixer, triggers, events)
+        play(args, mixer, triggers, events, backend)
     finally:
         triggers.release()
 
 
-def play(args, mixer, triggers, events):
+def play(args, mixer, triggers, events, backend):
     output = None
     next_sink_check = 0.0
+    game_alive = backend.watch_process(args.exit_with_pid) if args.exit_with_pid else None
     log(f"following {args.events}")
     while True:
-        if args.exit_with_pid and not os.path.exists(f"/proc/{args.exit_with_pid}"):
+        if game_alive and not game_alive():
             log("game process ended")
             break
         while True:
@@ -324,26 +286,22 @@ def play(args, mixer, triggers, events):
                 break
             mixer.handle(fields)
             triggers.handle(fields)
-        if output is None or output.poll() is not None:
+        if output is None or not output.alive():
             output = None
             now = time.monotonic()
             if now >= next_sink_check:
                 next_sink_check = now + 2.0
-                sink = find_sink(args.sink)
-                if sink:
-                    output = open_output(sink)
-                    log(f"output open on {sink}")
+                output = backend.open_output(args.sink)
+                if output:
+                    log(f"output open on {output.name}")
             if output is None:
                 mixer.render(BLOCK)
                 time.sleep(BLOCK / RATE)
                 continue
-        try:
-            output.stdin.write(mixer.render(BLOCK).tobytes())
-        except BrokenPipeError:
+        if not output.write(mixer.render(BLOCK)):
             output = None
     if output:
-        output.stdin.close()
-        output.wait(timeout=2)
+        output.close()
 
 
 if __name__ == "__main__":

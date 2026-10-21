@@ -41,10 +41,11 @@ def riff_stream(uexp, ubulk):
 
 
 def decode(encoded, suffix, target):
-    with tempfile.NamedTemporaryFile(suffix=suffix) as source:
-        source.write(encoded)
-        source.flush()
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", source.name, "-ar", str(RATE), "-ac", "2",
+    with tempfile.TemporaryDirectory() as directory:
+        source = os.path.join(directory, "source" + suffix)
+        with open(source, "wb") as handle:
+            handle.write(encoded)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", source, "-ar", str(RATE), "-ac", "2",
                         "-c:a", "pcm_f32le", "-f", "f32le", target], check=True)
 
 

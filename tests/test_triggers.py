@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "daemon"))
 
-from stray_haptics import Triggers, write_to_dualsense
+from stray_haptics import Triggers
 
 SCRATCHABLE = "1"
 NONE = "0"
@@ -58,18 +58,30 @@ class TriggersTest(unittest.TestCase):
         self.assertEqual(written, [])
 
 
-class WriteToDualSenseTest(unittest.TestCase):
+def linux_backend(find_device):
+    from backend_linux import Backend
+
+    logged = []
+    return Backend(logged.append, 48000, find_device=find_device), logged
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "hidraw is Linux only")
+class LinuxTriggerWriteTest(unittest.TestCase):
     def test_writes_the_report_to_the_device_found(self):
         with tempfile.TemporaryDirectory() as directory:
             device = os.path.join(directory, "hidraw")
             open(device, "wb").close()
-            self.assertTrue(write_to_dualsense(b"\x02report", find_device=lambda: device))
+            backend, _ = linux_backend(lambda: device)
+            self.assertTrue(backend.write_trigger_report(b"\x02report"))
             with open(device, "rb") as handle:
                 self.assertEqual(handle.read(), b"\x02report")
 
     def test_missing_or_unwritable_device_is_reported_not_raised(self):
-        self.assertFalse(write_to_dualsense(b"\x02", find_device=lambda: None))
-        self.assertFalse(write_to_dualsense(b"\x02", find_device=lambda: "/nonexistent/hidraw"))
+        backend, _ = linux_backend(lambda: None)
+        self.assertFalse(backend.write_trigger_report(b"\x02"))
+        backend, logged = linux_backend(lambda: "/nonexistent/hidraw")
+        self.assertFalse(backend.write_trigger_report(b"\x02"))
+        self.assertIn("could not write /nonexistent/hidraw", logged[0])
 
 
 if __name__ == "__main__":

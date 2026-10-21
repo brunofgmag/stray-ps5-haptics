@@ -79,13 +79,35 @@ class FollowTest(unittest.TestCase):
                 handle.write("START\tnew\tmeow\t0\t1\n")
             self.assertEqual(events.get(timeout=1)[1], "new")
 
+    def test_follows_a_log_the_game_truncates_and_keeps_open_in_text_mode(self):
+        import queue
+        import tempfile
+        import threading
+        import time
 
+        from stray_haptics import follow
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            path = os.path.join(directory, "events.log")
+            with open(path, "w") as handle:
+                handle.write("START\told\tmeow\t0\t1\n" * 10)
+            events = queue.Queue()
+            threading.Thread(target=follow, args=(path, events), daemon=True).start()
+            time.sleep(0.1)
+            with open(path, "w") as game:
+                game.write("START\tnew\tmeow\t0\t1\n")
+                game.flush()
+                self.assertEqual(events.get(timeout=1), ["RESET"])
+                self.assertEqual(events.get(timeout=1), ["START", "new", "meow", "0", "1"])
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "the pipe to pw-cat is Linux only")
 class OutputTest(unittest.TestCase):
     def test_output_opens_when_the_kernel_refuses_to_resize_the_pipe(self):
         import fcntl
         from unittest import mock
 
-        import stray_haptics
+        import backend_linux
 
         real_fcntl = fcntl.fcntl
 
@@ -99,9 +121,12 @@ class OutputTest(unittest.TestCase):
         process = mock.Mock()
         process.stdin = os.fdopen(writer, "wb", buffering=0)
         self.addCleanup(process.stdin.close)
-        with mock.patch.object(stray_haptics.subprocess, "Popen", return_value=process), \
-                mock.patch.object(stray_haptics.fcntl, "fcntl", side_effect=refuse_resize):
-            self.assertIs(stray_haptics.open_output("sink"), process)
+        logged = []
+        with mock.patch.object(backend_linux.subprocess, "Popen", return_value=process), \
+                mock.patch.object(backend_linux.fcntl, "fcntl", side_effect=refuse_resize):
+            output = backend_linux.PipeWireOutput("sink", 48000, logged.append)
+        self.assertIs(output.process, process)
+        self.assertIn("pipe kept at", logged[0])
 
 
 if __name__ == "__main__":
