@@ -31,6 +31,27 @@ local function emit(...)
     events:flush()
 end
 
+local function later_in_game_thread(delay, callback)
+    if ExecuteInGameThreadWithDelay then
+        ExecuteInGameThreadWithDelay(delay, callback)
+    else
+        ExecuteWithDelay(delay, function()
+            ExecuteInGameThread(callback)
+        end)
+    end
+end
+
+local function every_in_game_thread(delay, callback)
+    if LoopInGameThreadWithDelay then
+        LoopInGameThreadWithDelay(delay, callback)
+    else
+        LoopAsync(delay, function()
+            ExecuteInGameThread(callback)
+            return false
+        end)
+    end
+end
+
 local function valid(object)
     return object ~= nil and type(object) == "userdata" and object.IsValid ~= nil and object:IsValid()
 end
@@ -411,10 +432,8 @@ local function speak(component_path, attempt)
         return
     end
     if not wave and attempt < 4 then
-        ExecuteWithDelay(40 * attempt, function()
-            ExecuteInGameThread(function()
-                speak(component_path, attempt + 1)
-            end)
+        later_in_game_thread(40 * attempt, function()
+            speak(component_path, attempt + 1)
         end)
         return
     end
@@ -441,10 +460,8 @@ local function watch_new_components()
             return
         end
         local component_path = full:match("^%S+ (.+)$")
-        ExecuteWithDelay(20, function()
-            ExecuteInGameThread(function()
-                speak(component_path, 1)
-            end)
+        later_in_game_thread(20, function()
+            speak(component_path, 1)
         end)
     end)
 end
@@ -464,18 +481,15 @@ emit("RESET")
 log("writing events to " .. events_path)
 
 local hooked = false
-LoopAsync(250, function()
-    ExecuteInGameThread(function()
-        if not hooked and valid(StaticFindObject(CONTROLLER_CLASS)) then
-            hooked = true
-            register_hooks()
-            watch_new_components()
-            snapshot_loaded_cues()
-        end
-        local ok, err = pcall(poll)
-        if not ok then
-            log("poll error " .. tostring(err))
-        end
-    end)
-    return false
+every_in_game_thread(250, function()
+    if not hooked and valid(StaticFindObject(CONTROLLER_CLASS)) then
+        hooked = true
+        register_hooks()
+        watch_new_components()
+        snapshot_loaded_cues()
+    end
+    local ok, err = pcall(poll)
+    if not ok then
+        log("poll error " .. tostring(err))
+    end
 end)

@@ -67,8 +67,7 @@ local function reset(is_playing)
     speaker_cues = {cat_meow_come_on_01_Cue = 1.0}
     random_state = {[cue:GetFullName()] = {[unchanged:GetFullName()] = unchanged.before}}
     resolve = function() return {Sound = cue, IsPlaying = is_playing} end
-    ExecuteWithDelay = function() calls.delays = calls.delays + 1 end
-    ExecuteInGameThread = function(callback) callback() end
+    later_in_game_thread = function() calls.delays = calls.delays + 1 end
     guess_wave = function()
         calls.guesses = calls.guesses + 1
         return "alt02"
