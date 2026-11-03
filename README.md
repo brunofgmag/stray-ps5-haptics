@@ -9,7 +9,7 @@ The mod was built and played on Linux. The Windows port passes its tests on a Wi
 ## What you need
 
 - Stray on Steam, running through Proton.
-- [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS/releases) 3.0.1 (`UE4SS_v3.0.1.zip`). Extract it into `Stray/Hk_project/Binaries/Win64`, so that `dwmapi.dll` and the `ue4ss` folder sit next to `Stray-Win64-Shipping.exe`.
+- The UE4SS experimental build [`UE4SS_v3.0.1-1181-g83330635.zip`](https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental/UE4SS_v3.0.1-1181-g83330635.zip) (SHA-256 `b9a166a756605b21058a64cde93bcaab1a855dba3553e5c7e6ce0fa8fdfad7b9`). Extract it into `Stray/Hk_project/Binaries/Win64`, so that `dwmapi.dll` and the `ue4ss` folder sit next to `Stray-Win64-Shipping.exe`. The mod was built and played on this build. Don't use the stable 3.0.1 release: it can't run Lua timers on the game thread, so the mod falls back to background timers, and those crashed the game.
 - A DualSense that the PC sees as a USB device: either plugged in with a cable, or connected over Bluetooth through a Raspberry Pi Pico 2 W running [DS5Dongle](https://github.com/awalol/DS5Dongle). A plain Bluetooth connection won't work, because the haptics and the speaker go through the controller's USB audio device.
 - PipeWire with WirePlumber 0.5 or newer.
 - `python3` with `numpy`, `ffmpeg`, `pw-cat`, `pactl` and `cargo` (Rust). You can skip `cargo` if you use the Linux download from the [Releases page](https://github.com/brunofgmag/stray-ps5-haptics/releases), which comes with the Rust part already built.
@@ -97,7 +97,7 @@ If you try it, please open an issue and attach your `daemon.log`, whether it wor
 ### What you need on Windows
 
 - Stray on Steam.
-- [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS/releases) 3.0.1, extracted into `Stray\Hk_project\Binaries\Win64` the same way as on Linux. Windows loads it without any extra launch option.
+- The same UE4SS experimental build, [`UE4SS_v3.0.1-1181-g83330635.zip`](https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental/UE4SS_v3.0.1-1181-g83330635.zip), extracted into `Stray\Hk_project\Binaries\Win64` as on Linux. Windows loads it without any extra launch option.
 - A DualSense connected by USB cable, or through a Pico 2 W running DS5Dongle. Plain Bluetooth won't work here either.
 - Python 3.14 and FFmpeg. Both install from a terminal with winget:
 
